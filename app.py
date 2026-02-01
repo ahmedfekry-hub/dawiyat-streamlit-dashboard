@@ -1,222 +1,384 @@
-import re
 import io
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
+import plotly.graph_objects as go
+import plotly.express as px
+from datetime import datetime
 
-# =========================================================
-# Page config
-# =========================================================
-st.set_page_config(page_title="Dawaiyat Project Tracker Dashboard", layout="wide")
+st.set_page_config(page_title="Dawiyat Project Tracker Dashboard", layout="wide")
 
-# =========================================================
-# Styling / Theme
-# =========================================================
-DARK_CSS = """
+# ----------------------------
+# Styling (light + dark)
+# ----------------------------
+BASE_CSS = """
 <style>
-/* App background + typography */
-.stApp { background: #0b1220; color: #eef2ff; }
-section[data-testid="stSidebar"] { background: #0a1020; }
+/* Layout */
+.block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px; }
+header, footer { visibility: hidden; height: 0px; }
+[data-testid="stSidebar"] { padding-top: 1rem; }
 
-/* Card look */
-.kpi-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 16px;
-  padding: 14px 16px;
-}
-.kpi-title { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.65); margin: 0; }
-.kpi-value { font-size: 30px; font-weight: 700; margin: 4px 0 0 0; color: #ffffff; }
+/* Top bar (pseudo) */
+.topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; padding: 6px 2px 14px 2px; }
+.brand { display:flex; align-items:center; gap:10px; }
+.brand .logo { width:36px; height:36px; border-radius:10px; background: linear-gradient(135deg,#6D28D9,#EC4899,#22C55E); display:flex; align-items:center; justify-content:center; color:white; font-weight:800; }
+.brand .title { font-size: 20px; font-weight: 800; }
+.brand .subtitle { font-size: 11px; color:#64748B; margin-top:-2px; letter-spacing:.08em; text-transform:uppercase; }
+.actions { display:flex; align-items:center; gap:10px; }
+.pill { border-radius: 999px; padding: 8px 12px; background:#0F172A0D; border: 1px solid #E2E8F0; font-weight:600; display:flex; align-items:center; gap:8px; }
+.pill .dot { width:8px; height:8px; border-radius:50%; background:#22C55E; }
+.btn { border-radius: 999px; padding: 10px 14px; background:#2563EB; color:white; font-weight:700; border:none; }
+.btn:focus { outline:none; box-shadow:none; }
+.help { width:34px; height:34px; border-radius: 999px; border:1px solid #E2E8F0; background:#FFFFFF; display:flex; align-items:center; justify-content:center; font-weight:900; cursor:pointer; }
 
-/* Section title */
-.section-title { font-size: 22px; font-weight: 800; margin-top: 4px; margin-bottom: 0; }
-.section-sub { font-size: 12px; color: rgba(255,255,255,.6); margin-top: 0; }
+/* KPI cards */
+.kpi-row { display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; }
+.kpi { border-radius: 16px; border:1px solid #E2E8F0; background:white; padding: 14px 14px 12px 14px; box-shadow: 0 1px 0 rgba(0,0,0,.02); min-height: 92px; position:relative; }
+.kpi .label { font-size:11px; color:#64748B; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.kpi .value { font-size: 28px; font-weight: 900; margin-top: 3px; line-height:1.0; }
+.kpi .spark { position:absolute; top:14px; right:14px; opacity:.22; }
+.kpi .bar { height: 3px; width: 34px; background:#E2E8F0; border-radius: 99px; margin-top: 8px; }
+.kpi.blue .bar { background:#2563EB; }
+.kpi.purple .bar { background:#7C3AED; }
+.kpi.green .bar { background:#22C55E; }
+.kpi.red .bar { background:#EF4444; }
+.kpi.orange .bar { background:#F59E0B; }
 
-/* Buttons */
-.stButton>button, .stDownloadButton>button {
-  border-radius: 12px !important;
-}
+/* Sections */
+.h2 { font-size: 18px; font-weight: 900; margin: 18px 0 2px 0; display:flex; align-items:center; gap:10px;}
+.h2::before { content:""; width:4px; height:18px; border-radius: 99px; background:#2563EB; display:inline-block; }
+.muted { color:#64748B; font-size: 11px; letter-spacing:.08em; text-transform: uppercase; font-weight: 900; margin-bottom: 10px; }
+
+/* Grid cards */
+.grid3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; }
+.card { border-radius: 16px; border:1px solid #E2E8F0; background:white; padding: 14px; box-shadow: 0 1px 0 rgba(0,0,0,.02); }
+.card .ctitle { font-size: 11px; color:#64748B; letter-spacing:.08em; text-transform: uppercase; font-weight: 900; margin-bottom: 6px; }
+.card .csubtitle { font-size: 13px; font-weight: 800; margin-bottom: 10px; }
+
+/* Alert section */
+.alert-wrap { border: 1px solid #FCA5A5; background:#FEF2F2; border-radius: 16px; padding: 14px; }
+.alert-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.alert-title { font-size: 16px; font-weight: 900; color:#991B1B; display:flex; align-items:center; gap:10px;}
+.badge { background:#FEE2E2; color:#991B1B; border:1px solid #FCA5A5; padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 900; letter-spacing:.08em; text-transform: uppercase;}
+.cards-scroll { display:flex; gap: 10px; overflow-x:auto; padding-top: 10px; padding-bottom: 6px; }
+.mini { min-width: 260px; max-width: 260px; border-radius: 14px; border:1px solid #E2E8F0; background:white; padding: 12px; }
+.mini .idx { font-size:11px; color:#64748B; font-weight:900; letter-spacing:.08em; text-transform: uppercase; }
+.mini .lc { font-weight: 900; margin-top: 6px; }
+.mini .loc { font-size: 11px; color:#64748B; margin-top: 2px; }
+.mini .prog { font-size: 11px; margin-top: 10px; color:#64748B; font-weight: 900; letter-spacing:.08em; text-transform: uppercase;}
+.mini .pval { font-weight: 900; float:right; color:#0F172A; }
+.mini .btn2 { margin-top: 10px; border-radius: 10px; width:100%; padding:10px 12px; border:1px solid #CBD5E1; background:#FFFFFF; font-weight: 900; color:#2563EB; }
 
 /* Tables */
-[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; }
-</style>
-"""
+.table-title { display:flex; align-items:center; justify-content:space-between; gap:10px; margin: 10px 0 8px 0; }
+.table-title .left { display:flex; align-items:center; gap:10px; }
+.pill2 { background:#F1F5F9; border:1px solid #E2E8F0; border-radius:999px; padding:6px 10px; font-size: 11px; font-weight: 900; letter-spacing:.08em; text-transform: uppercase; color:#0F172A;}
+.seg { display:flex; gap:6px; }
+.seg button { border-radius: 999px; padding: 8px 12px; border:1px solid #E2E8F0; background:white; font-weight: 900; }
+.seg button.active { background:#2563EB; color:white; border-color:#2563EB; }
 
-LIGHT_CSS = """
-<style>
-.stApp { background: #ffffff; color: #0f172a; }
-section[data-testid="stSidebar"] { background: #f8fafc; }
-
-.kpi-card {
-  background: #ffffff;
-  border: 1px solid rgba(2,6,23,0.08);
-  border-radius: 16px;
-  padding: 14px 16px;
-  box-shadow: 0 8px 24px rgba(2,6,23,0.05);
+/* Dark mode overrides */
+html[data-theme="dark"] .kpi, html[data-theme="dark"] .card, html[data-theme="dark"] .mini {
+  background: #0B1220; border-color: #1E293B; box-shadow:none;
 }
-.kpi-title { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: rgba(2,6,23,.55); margin: 0; }
-.kpi-value { font-size: 30px; font-weight: 800; margin: 4px 0 0 0; color: #0f172a; }
-
-.section-title { font-size: 22px; font-weight: 900; margin-top: 4px; margin-bottom: 0; }
-.section-sub { font-size: 12px; color: rgba(2,6,23,.55); margin-top: 0; }
-
-.stButton>button, .stDownloadButton>button { border-radius: 12px !important; }
-[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; }
+html[data-theme="dark"] .kpi .label, html[data-theme="dark"] .muted, html[data-theme="dark"] .card .ctitle {
+  color:#94A3B8;
+}
+html[data-theme="dark"] .brand .subtitle { color:#94A3B8; }
+html[data-theme="dark"] .pill { background:#0B1220; border-color:#1E293B; color:#E2E8F0; }
+html[data-theme="dark"] .help { background:#0B1220; border-color:#1E293B; color:#E2E8F0; }
+html[data-theme="dark"] .alert-wrap { background:#2A0F12; border-color:#7F1D1D; }
+html[data-theme="dark"] .badge { background:#3B0A0C; border-color:#7F1D1D; color:#FCA5A5; }
 </style>
 """
 
-def apply_theme(dark: bool):
-    st.markdown(DARK_CSS if dark else LIGHT_CSS, unsafe_allow_html=True)
+st.markdown(BASE_CSS, unsafe_allow_html=True)
 
-# Plotly template (keeps charts consistent with theme)
-def plotly_template(dark: bool) -> str:
-    return "plotly_dark" if dark else "plotly_white"
+# ----------------------------
+# Sidebar settings
+# ----------------------------
+with st.sidebar:
+    st.subheader("Settings")
+    dark_mode = st.toggle("Dark Mode", value=True)
 
-# =========================================================
-# Helpers
-# =========================================================
-def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", str(s).lower()).strip()
-
-def find_col(df: pd.DataFrame, candidates, required=False):
-    """Find the first column whose normalized name contains any candidate substring."""
-    cols = list(df.columns)
-    norm_map = {c: _norm(c) for c in cols}
-    cand_norm = [_norm(x) for x in candidates]
-    for c in cols:
-        for kw in cand_norm:
-            if kw and kw in norm_map[c]:
-                return c
-    if required:
-        raise KeyError(f"Missing required column. Tried: {candidates}")
-    return None
-
-def to_percent(v):
-    """Convert '0.81' or '81%' or '81' into 81.0 (percent)."""
-    if pd.isna(v):
-        return np.nan
-    if isinstance(v, str):
-        v = v.replace("%", "").strip()
-    try:
-        f = float(v)
-        return f * 100.0 if f <= 1.0 else f
-    except Exception:
-        return np.nan
-
-def safe_dt(s):
-    return pd.to_datetime(s, errors="coerce")
-
-def ensure_str(s):
-    return s.astype(str).str.strip()
-
-def make_week_key(dt_series: pd.Series) -> pd.Series:
-    d = safe_dt(dt_series)
-    if d.isna().all():
-        return pd.Series([np.nan]*len(dt_series), index=dt_series.index)
-    iso = d.dt.isocalendar()
-    return (iso["year"].astype(str) + "-W" + iso["week"].astype(str).str.zfill(2))
-
-# =========================================================
-# Loading: supports (A) single workbook with 2 sheets OR (B) two separate files
-# =========================================================
-@st.cache_data(show_spinner=False)
-def read_any(file, sheet_name=None) -> pd.DataFrame:
-    name = getattr(file, "name", "").lower()
-    if name.endswith(".csv"):
-        return pd.read_csv(file)
-    if name.endswith(".xlsx") or name.endswith(".xls"):
-        # If sheet_name omitted, read first sheet
-        return pd.read_excel(file, sheet_name=sheet_name)
-    raise ValueError("Unsupported file type. Upload .xlsx or .csv")
-
-@st.cache_data(show_spinner=False)
-def load_from_workbook(wb) -> tuple[pd.DataFrame, pd.DataFrame]:
-    xls = pd.ExcelFile(wb)
-    sheets = { _norm(s): s for s in xls.sheet_names }
-    # Robust sheet matching
-    tool_name = None
-    met_name = None
-    for k, original in sheets.items():
-        if "dawaiyat service tool" in k:
-            tool_name = original
-        if "met actual progress" in k or ("met" in k and "progress" in k):
-            met_name = original
-    if not tool_name or not met_name:
-        raise ValueError("Workbook must contain sheets named 'Dawaiyat Service Tool' and 'MET Actual progress'.")
-    tool = pd.read_excel(xls, tool_name)
-    met  = pd.read_excel(xls, met_name)
-    return tool, met
-
-def build_dashboard_guide():
+# Streamlit theme switch (simple)
+if dark_mode:
     st.markdown(
         """
-### Dashboard Guide (for your team)
-
-This dashboard compares **Contractor Commitment (Dawaiyat Service Tool)** vs **Site Reality (MET Actual progress)**.
-
-#### 1) KPI Summary (Top 5 Cards)
-- **Total Link Codes:** Total unique Link Codes in Dawaiyat Service Tool.
-- **Dawaiyat Avg Target:** Average commitment progress (**Percentage of Completion**) from the tool.
-- **MET Avg Actual:** Average site-reported progress from MET (**Civil Completion %** or **Fiber Completion %**, depending on Subclass).
-- **Missing MET Reports:** Link Codes that exist in the Tool but have **no** records in MET (your blind spots).
-- **Critical Lags (>15%):** Items where MET progress is **15%+ behind** the Tool commitment.
-
-#### 2) Strategic 3×3 Chart Grid
-- **Regional Coverage (Donut):** Work concentration across regions.
-- **Dawaiyat vs MET Trend (Line):** Weekly average trend of Tool vs MET.
-- **Operational Status (Donut):** Completed / In Progress / Missing Site Report.
-- **Field Supervisor Performance (Bar):** Units managed vs average progress (accountability view).
-- **Discipline Distribution (Donut):** Civil vs Fiber mix.
-- **System Variance Gap (Area):** Average (MET − Tool). Large negative area = delivery/reporting gap.
-- **District Loading (Bar):** Top districts by volume.
-- **Execution Lifecycle (Pie):** Stage distribution.
-- **Projected vs Realized (Step):** Commitment vs actual trend.
-
-#### 3) Actionable Alert: Missing MET Reports
-A list of Link Codes that **must be updated** by site/project teams.
-
-#### 4) Audit Comparison Table
-Detailed drill-down.  
-- **Variance:** MET% − Tool% (green = ahead, red = behind).  
-- **No MET Record:** flagged as **MISSING MET**.
-""",
+        <script>
+        document.documentElement.setAttribute('data-theme','dark');
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <script>
+        document.documentElement.setAttribute('data-theme','light');
+        </script>
+        """,
         unsafe_allow_html=True,
     )
 
-# =========================================================
+# ----------------------------
+# Dashboard Guide (Help)
+# ----------------------------
+if "show_guide" not in st.session_state:
+    st.session_state.show_guide = False
+
+GUIDE_MD = """
+## Dashboard Guide
+
+### 1) The KPI Summary (Top 5 Cards)
+- **Total Link Codes**: total volume of projects currently in your Dawaiyat Service Tool.
+- **Dawaiyat Avg Target**: average progress your contractors should have made according to the master tool.
+- **MET Avg Actual**: average progress actually reported from the sites.
+- **Missing MET Reports**: your **Blind Spot** count (link codes in the tool but missing in MET).
+- **Critical Lags (>15%)**: projects where MET progress is behind the tool commitment by more than 15%.
+
+### 2) Strategic 3×3 Chart Grid
+- **Regional Coverage**: where your projects are concentrated (Makkah, Jizan, etc.).
+- **Dawaiyat vs. MET Trend**: green (MET) should follow blue (Tool). A widening gap = delivery problem.
+- **Operational Status**: Completed / In Progress / Missing site reports.
+- **Field Supervisor Performance**: accountability (units per supervisor + average progress).
+- **Discipline Distribution**: Civil vs Fiber breakdown.
+- **System Variance Gap**: red area chart for the “pain” — office vs site reality mismatch.
+- **District Loading**: bottleneck districts by volume.
+- **Execution Lifecycle**: phase distribution (Implementation vs Handover, etc.).
+- **Projected vs Realized**: step chart for the rhythm of delivery.
+
+### 3) Actionable Alert: Missing MET Reports
+Each card is a Link Code that has no MET reporting. “Assign Update” simulates assigning a coordinator to fix the gap.
+
+### 4) Audit Comparison Table
+Drill-down reconciliation.
+- **Variance** = MET − Tool (green ahead, red behind)
+- **Missing MET** explicitly flagged when reconciliation fails.
+"""
+
+# ----------------------------
+# Helpers
+# ----------------------------
+RENAME_TOOL = {
+    "Link Code": "link_code",
+    "Work Order": "work_order",
+    "District": "district",
+    "Subclass": "subclass",
+    "WO Cost": "wo_cost",
+    "Percentage of Completion": "tool_progress",
+    "Region": "region",
+    "Project": "project",
+    "Year": "year",
+    "Stage": "stage",
+    "Supervisor": "supervisor",
+    "Category": "category",
+}
+
+RENAME_MET = {
+    "Link Code": "link_code",
+    "Work Order": "work_order",
+    "District": "district",
+    "Subclass": "subclass",
+    "Civil Completion  %": "met_civil_progress",
+    "Fiber Completion  %": "met_fiber_progress",
+    "MST Target": "mst_target_flag",
+    "Region": "region",
+    "Project": "project",
+    "Year": "year",
+    "Stage": "stage",
+    "Supervisor": "supervisor",
+}
+
+REQ_TOOL_SHEET = "Dawaiyat Service Tool"
+REQ_MET_SHEET = "MET Actual progress"
+
+def normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+def safe_float(x):
+    try:
+        if pd.isna(x):
+            return np.nan
+        if isinstance(x, str):
+            x = x.replace("%", "").replace(",", "").strip()
+        return float(x)
+    except Exception:
+        return np.nan
+
+def ensure_key_cols(df: pd.DataFrame, keys):
+    missing = [k for k in keys if k not in df.columns]
+    return missing
+
+def read_any_excel_or_csv(file):
+    name = getattr(file, "name", "upload")
+    if name.lower().endswith(".csv"):
+        df = pd.read_csv(file)
+        return normalize_cols(df)
+    else:
+        df = pd.read_excel(file)
+        return normalize_cols(df)
+
+def load_from_workbook(wb_file):
+    xl = pd.ExcelFile(wb_file)
+    sheets = xl.sheet_names
+    if REQ_TOOL_SHEET not in sheets or REQ_MET_SHEET not in sheets:
+        raise ValueError(f"Workbook must contain sheets: '{REQ_TOOL_SHEET}' and '{REQ_MET_SHEET}'. Found: {sheets}")
+    tool = normalize_cols(pd.read_excel(wb_file, sheet_name=REQ_TOOL_SHEET))
+    met  = normalize_cols(pd.read_excel(wb_file, sheet_name=REQ_MET_SHEET))
+    return tool, met
+
+def rename_and_clean_tool(df):
+    df = df.rename(columns={k:v for k,v in RENAME_TOOL.items() if k in df.columns})
+    df = df.copy()
+    # normalize text
+    for c in ["link_code","work_order","district","subclass","region","project","stage","supervisor","category"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip()
+    if "tool_progress" in df.columns:
+        df["tool_progress"] = df["tool_progress"].apply(safe_float)
+    if "wo_cost" in df.columns:
+        df["wo_cost"] = df["wo_cost"].apply(safe_float)
+    # subclass normalize
+    if "subclass" in df.columns:
+        df["subclass"] = df["subclass"].str.title()
+        df.loc[df["subclass"].str.contains("Civil", na=False), "subclass"] = "Civil"
+        df.loc[df["subclass"].str.contains("Fiber", na=False), "subclass"] = "Fiber"
+    return df
+
+def rename_and_clean_met(df):
+    df = df.rename(columns={k:v for k,v in RENAME_MET.items() if k in df.columns})
+    df = df.copy()
+    for c in ["link_code","work_order","district","subclass","region","project","stage","supervisor"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip()
+    for c in ["met_civil_progress","met_fiber_progress"]:
+        if c in df.columns:
+            df[c] = df[c].apply(safe_float)
+    if "subclass" in df.columns:
+        df["subclass"] = df["subclass"].str.title()
+        df.loc[df["subclass"].str.contains("Civil", na=False), "subclass"] = "Civil"
+        df.loc[df["subclass"].str.contains("Fiber", na=False), "subclass"] = "Fiber"
+    return df
+
+def met_progress_row(row):
+    """
+    If subclass is Civil -> use met_civil_progress
+    If subclass is Fiber -> use met_fiber_progress
+    """
+    sc = str(row.get("subclass", "")).strip().lower()
+    if sc == "civil":
+        return row.get("met_civil_progress", np.nan)
+    if sc == "fiber":
+        return row.get("met_fiber_progress", np.nan)
+    # if unknown subclass, fallback: take max available
+    return np.nanmax([row.get("met_civil_progress", np.nan), row.get("met_fiber_progress", np.nan)])
+
+def build_master(tool_df, met_df):
+    # Required keys for matching
+    keys = ["link_code", "work_order", "subclass"]
+
+    # Keep only rows where key columns exist
+    for dfname, df in [("Tool", tool_df), ("MET", met_df)]:
+        miss = ensure_key_cols(df, keys)
+        if miss:
+            raise ValueError(f"{dfname} missing columns: {miss}")
+
+    # merge
+    merged = tool_df.merge(
+        met_df,
+        on=keys,
+        how="left",
+        suffixes=("_tool","_met")
+    )
+
+    # decide met progress by subclass (civil/fiber)
+    merged["met_progress"] = merged.apply(met_progress_row, axis=1)
+
+    # variance and statuses
+    merged["variance"] = merged["met_progress"] - merged["tool_progress"]
+    merged["has_met"] = ~merged["met_progress"].isna()
+
+    merged["record_status"] = np.where(
+        merged["has_met"], "SHEET SYNCED", "NO MET SHEET"
+    )
+
+    # operational status buckets
+    def op_bucket(r):
+        if not r["has_met"]:
+            return "Missing Site Report"
+        if pd.isna(r["met_progress"]):
+            return "Missing Site Report"
+        if r["met_progress"] >= 99:
+            return "Completed"
+        return "In Progress"
+
+    merged["operational_status"] = merged.apply(op_bucket, axis=1)
+
+    # critical lag (tool - met > 15)
+    merged["critical_lag"] = np.where(
+        (merged["has_met"]) & ((merged["tool_progress"] - merged["met_progress"]) > 15),
+        True, False
+    )
+
+    # Minimal display-friendly columns
+    show_cols = [
+        "link_code","work_order","district","subclass",
+        "tool_progress","met_progress","variance",
+        "region","project","year","stage","supervisor",
+        "operational_status","record_status",
+        "wo_cost"
+    ]
+    for c in show_cols:
+        if c not in merged.columns:
+            merged[c] = np.nan
+
+    return merged[show_cols]
+
+def pct(x):
+    if pd.isna(x):
+        return np.nan
+    return float(x)
+
+def fmt_pct(x):
+    if pd.isna(x):
+        return ""
+    return f"{x:.1f}%"
+
+def safe_int(x):
+    try:
+        return int(x)
+    except:
+        return 0
+
+# ----------------------------
 # Header
-# =========================================================
-with st.sidebar:
-    st.header("⚙️ Settings")
-    dark_mode = st.toggle("Dark Mode", value=False)  # default light like your screenshot
-apply_theme(dark_mode)
+# ----------------------------
+left = """
+<div class="topbar">
+  <div class="brand">
+    <div class="logo">▦</div>
+    <div>
+      <div class="title">Delta Executive BI</div>
+      <div class="subtitle">Contractor Commitment Analysis</div>
+    </div>
+  </div>
+</div>
+"""
+st.markdown(left, unsafe_allow_html=True)
 
-# Top header row with "?" guide
-top_left, top_right = st.columns([0.8, 0.2], vertical_alignment="center")
-with top_left:
-    st.markdown("## 📊 Dawaiyat Project Tracker Dashboard")
-    st.caption("Contractor Commitment vs Site Actual | Executive Decision View")
-with top_right:
-    with st.popover("❓ Dashboard Guide", use_container_width=True):
-        build_dashboard_guide()
-    if st.button("🔄 Update Source Data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+# ----------------------------
+# Upload Section
+# ----------------------------
+st.caption("Commitment vs Actual | Executive Decision View")
 
-st.divider()
-
-# =========================================================
-# Upload area
-# =========================================================
-st.subheader("Upload Source Data")
 upload_mode = st.radio(
-    "Choose upload mode",
-    ["Single Excel (contains both sheets)", "Two files (Tool + MET)"],
+    "Upload Mode",
+    ["Single Excel (contains both sheets)", "Two separate files (Tool + MET)"],
     horizontal=True,
+    label_visibility="collapsed",
 )
 
 tool = met = None
@@ -232,513 +394,343 @@ else:
     with c2:
         met_file = st.file_uploader("Upload MET Actual progress (.xlsx/.csv)", type=["xlsx", "csv"], key="met_file")
     if tool_file and met_file:
-        # For XLSX here, we read the first sheet (or user can provide a one-sheet xlsx)
-        tool = read_any(tool_file)
-        met = read_any(met_file)
+        # For XLSX (single-sheet)
+        tool = read_any_excel_or_csv(tool_file)
+        met  = read_any_excel_or_csv(met_file)
 
 if tool is None or met is None:
-    st.info("⬆️ Upload your source data to start.")
+    st.info("Please upload the Excel file(s) to start")
     st.stop()
 
-# =========================================================
-# Column mapping (robust to small header changes)
-# =========================================================
-# Shared identity columns
-tool_link = find_col(tool, ["link code"], required=True)
-tool_wo   = find_col(tool, ["work order", "wo"], required=False)
+# Clean & normalize
+tool_df = rename_and_clean_tool(tool)
+met_df  = rename_and_clean_met(met)
 
-met_link  = find_col(met, ["link code"], required=True)
-met_wo    = find_col(met, ["work order", "wo"], required=False)
+# Build master dataset
+master = build_master(tool_df, met_df)
 
-# Subclass / discipline (Civil vs Fiber)
-tool_sub  = find_col(tool, ["subclass", "discipline", "work subclass"], required=False)
-met_sub   = find_col(met, ["subclass", "discipline", "work subclass"], required=False)
+# ----------------------------
+# Filters row
+# ----------------------------
+flt_cols = st.columns([0.08, 0.13, 0.13, 0.13, 0.13, 0.12, 0.13, 0.13, 0.15])
+with flt_cols[0]:
+    st.markdown('<div class="pill"><span class="dot"></span>FILTERS</div>', unsafe_allow_html=True)
 
-# Progress columns
-tool_pct_col = find_col(tool, ["percentage of completion", "overall progress", "progress"], required=True)
+def pick(col, label, values):
+    with col:
+        return st.selectbox(label, values, index=0, label_visibility="collapsed")
 
-met_civil_pct = find_col(met, ["civil completion"], required=False)
-met_fiber_pct = find_col(met, ["fiber completion"], required=False)
-met_any_pct   = find_col(met, ["overall progress", "actual progress", "completion"], required=False)
+link_vals = ["All Link Code"] + sorted(master["link_code"].dropna().unique().tolist())
+reg_vals  = ["All Region"] + sorted(master["region"].dropna().unique().tolist())
+proj_vals = ["All Project"] + sorted(master["project"].dropna().unique().tolist())
+sub_vals  = ["All Subclass"] + sorted(master["subclass"].dropna().unique().tolist())
+year_vals = ["All Year"] + sorted([str(y) for y in master["year"].dropna().unique().tolist()])
+stage_vals= ["All Stage"] + sorted(master["stage"].dropna().unique().tolist())
+dist_vals = ["All District"] + sorted(master["district"].dropna().unique().tolist())
+sup_vals  = ["All Supervisor"] + sorted(master["supervisor"].dropna().unique().tolist())
 
-# Dates
-tool_target_date = find_col(tool, ["targeted completion", "forecasted completion", "target completion", "targeted completion date"], required=False)
-met_target_date  = find_col(met,  ["targeted completion", "forecasted completion", "target completion", "mst target"], required=False)
+f_link = pick(flt_cols[1], "LINK CODE", link_vals)
+f_reg  = pick(flt_cols[2], "REGION", reg_vals)
+f_proj = pick(flt_cols[3], "PROJECT", proj_vals)
+f_sub  = pick(flt_cols[4], "SUBCLASS", sub_vals)
+f_year = pick(flt_cols[5], "YEAR", year_vals)
+f_stage= pick(flt_cols[6], "STAGE", stage_vals)
+f_dist = pick(flt_cols[7], "DISTRICT", dist_vals)
+f_sup  = pick(flt_cols[8], "SUPERVISOR", sup_vals)
 
-# Filter columns (optional, will show only if found)
-f_region     = find_col(tool, ["region"], required=False)
-f_project    = find_col(tool, ["project"], required=False)
-f_year       = find_col(tool, ["year"], required=False)
-f_stage      = find_col(tool, ["stage"], required=False)
-f_district   = find_col(tool, ["district"], required=False)
-f_supervisor = find_col(tool, ["supervisor"], required=False)
-f_category   = find_col(tool, ["category"], required=False)
+filtered = master.copy()
+if f_link != "All Link Code": filtered = filtered[filtered["link_code"] == f_link]
+if f_reg  != "All Region":    filtered = filtered[filtered["region"] == f_reg]
+if f_proj != "All Project":   filtered = filtered[filtered["project"] == f_proj]
+if f_sub  != "All Subclass":  filtered = filtered[filtered["subclass"] == f_sub]
+if f_year != "All Year":      filtered = filtered[filtered["year"].astype(str) == f_year]
+if f_stage!= "All Stage":     filtered = filtered[filtered["stage"] == f_stage]
+if f_dist != "All District":  filtered = filtered[filtered["district"] == f_dist]
+if f_sup  != "All Supervisor":filtered = filtered[filtered["supervisor"] == f_sup]
 
-# =========================================================
-# Prepare Tool table
-# =========================================================
-tool_df = tool.copy()
-tool_df["_Link Code"] = ensure_str(tool_df[tool_link])
+# ----------------------------
+# KPI Summary
+# ----------------------------
+total_link_codes = filtered["link_code"].nunique()
+avg_tool = filtered["tool_progress"].dropna().mean()
+avg_met  = filtered["met_progress"].dropna().mean()
+missing_met = filtered[~filtered["has_met"]]["link_code"].nunique()
+critical_lags = int(filtered["critical_lag"].sum())
 
-if tool_wo:
-    tool_df["_WO"] = ensure_str(tool_df[tool_wo])
-else:
-    tool_df["_WO"] = tool_df["_Link Code"]  # fallback
+k1, k2, k3, k4, k5 = st.columns(5)
 
-tool_df["_Subclass"] = ensure_str(tool_df[tool_sub]) if tool_sub else ""
+def kpi_html(label, value, cls, icon=""):
+    return f"""
+    <div class="kpi {cls}">
+      <div class="label">{label}</div>
+      <div class="value">{value}</div>
+      <div class="bar"></div>
+      <div class="spark">{icon}</div>
+    </div>
+    """
 
-tool_df["_Tool_Target_%"] = tool_df[tool_pct_col].apply(to_percent)
-tool_df["_Tool_Target_Date"] = safe_dt(tool_df[tool_target_date]) if tool_target_date else pd.NaT
+k1.markdown(kpi_html("TOTAL LINK CODES", f"{total_link_codes}", "blue", "∿"), unsafe_allow_html=True)
+k2.markdown(kpi_html("DAWAIYAT AVG TARGET", fmt_pct(avg_tool), "purple", "◎"), unsafe_allow_html=True)
+k3.markdown(kpi_html("MET AVG ACTUAL", fmt_pct(avg_met), "green", "↗"), unsafe_allow_html=True)
+k4.markdown(kpi_html("MISSING MET REPORTS", f"{missing_met}", "red", "⦸"), unsafe_allow_html=True)
+k5.markdown(kpi_html("CRITICAL LAGS (>15%)", f"{critical_lags}", "orange", "⚠"), unsafe_allow_html=True)
 
-# =========================================================
-# Prepare MET table (Subclass-aware progress selection)
-# =========================================================
-met_df = met.copy()
-met_df["_Link Code"] = ensure_str(met_df[met_link])
+# ----------------------------
+# Strategic 3x3 Grid
+# ----------------------------
+st.markdown('<div class="h2">Strategic Performance Grids</div>', unsafe_allow_html=True)
+st.markdown('<div class="muted">REAL-TIME COMPARATIVE ANALYTICS</div>', unsafe_allow_html=True)
 
-if met_wo:
-    met_df["_WO"] = ensure_str(met_df[met_wo])
-else:
-    met_df["_WO"] = met_df["_Link Code"]  # fallback
+g1, g2, g3 = st.columns(3)
 
-met_df["_Subclass"] = ensure_str(met_df[met_sub]) if met_sub else ""
-
-# Build MET progress by choosing correct column based on subclass
-def met_progress_row(row):
-    sub = _norm(row.get("_Subclass", ""))
-    if "civil" in sub and met_civil_pct:
-        return to_percent(row.get(met_civil_pct))
-    if ("fiber" in sub or "fibre" in sub) and met_fiber_pct:
-        return to_percent(row.get(met_fiber_pct))
-    # If subclass empty or columns missing, use any progress
-    if met_any_pct:
-        return to_percent(row.get(met_any_pct))
-    # Fallback: try civil then fiber
-    if met_civil_pct:
-        v = to_percent(row.get(met_civil_pct))
-        if not np.isnan(v):
-            return v
-    if met_fiber_pct:
-        v = to_percent(row.get(met_fiber_pct))
-        if not np.isnan(v):
-            return v
-    return np.nan
-
-met_df["_MET_Actual_%"] = met_df.apply(met_progress_row, axis=1)
-met_df["_MET_Target_Date"] = safe_dt(met_df[met_target_date]) if met_target_date else pd.NaT
-
-# =========================================================
-# Merge (prefer WO match; if WO missing, Link Code match)
-# =========================================================
-merge_key = "_WO" if (tool_wo or met_wo) else "_Link Code"
-
-df = pd.merge(
-    tool_df,
-    met_df[["_Link Code", "_WO", "_Subclass", "_MET_Actual_%", "_MET_Target_Date"]],
-    on=merge_key,
-    how="left",
-    suffixes=("", "_met"),
-    indicator=False,
-)
-
-# Fill MET Link Code if merge_key was WO and tool has link code
-if "_Link Code_met" in df.columns:
-    df["_Link Code_MET"] = df["_Link Code_met"].fillna(df["_Link Code"])
-else:
-    df["_Link Code_MET"] = df["_Link Code"]
-
-# Record status and variance
-df["Record Status"] = np.where(df["_MET_Actual_%"].isna(), "NO MET SHEET", "SHEET SYNCED")
-df["Variance %"] = df["_MET_Actual_%"] - df["_Tool_Target_%"]
-df["Critical Lag"] = df["Variance %"] <= -15
-
-# Missing MET reports counted at Link Code level
-tool_link_codes = set(tool_df["_Link Code"].dropna().unique())
-met_link_codes  = set(met_df["_Link Code"].dropna().unique())
-missing_link_codes = sorted(list(tool_link_codes - met_link_codes))
-
-# =========================================================
-# Global Filters (top bar like the screenshot)
-# =========================================================
-st.markdown('<p class="section-title">Delta Executive BI</p>', unsafe_allow_html=True)
-st.markdown('<p class="section-sub">CONTRACTOR COMMITMENT ANALYSIS</p>', unsafe_allow_html=True)
-
-# Build options for filters
-def opt_list(series):
-    vals = sorted([v for v in series.dropna().unique() if str(v).strip() != ""])
-    return ["All"] + vals
-
-# Some filters live on tool_df (authoritative master list)
-f_link = st.session_state.get("f_link", "All")
-
-c = st.columns([1.0, 1.0, 1.0, 1.0, 0.9, 1.0, 1.0, 1.0])
-with c[0]:
-    link_sel = st.selectbox("LINK CODE", opt_list(tool_df["_Link Code"]), index=0)
-with c[1]:
-    region_sel = st.selectbox("REGION", opt_list(tool_df[f_region]) if f_region else ["All"])
-with c[2]:
-    project_sel = st.selectbox("PROJECT", opt_list(tool_df[f_project]) if f_project else ["All"])
-with c[3]:
-    subclass_sel = st.selectbox("SUBCLASS", opt_list(tool_df["_Subclass"]) if tool_sub else ["All"])
-with c[4]:
-    year_sel = st.selectbox("YEAR", opt_list(tool_df[f_year]) if f_year else ["All"])
-with c[5]:
-    stage_sel = st.selectbox("STAGE", opt_list(tool_df[f_stage]) if f_stage else ["All"])
-with c[6]:
-    district_sel = st.selectbox("DISTRICT", opt_list(tool_df[f_district]) if f_district else ["All"])
-with c[7]:
-    supervisor_sel = st.selectbox("SUPERVISOR", opt_list(tool_df[f_supervisor]) if f_supervisor else ["All"])
-
-# Apply filters to df (merged)
-fdf = df.copy()
-
-def apply_filter(df_, col_, val_):
-    if col_ is None or val_ == "All":
-        return df_
-    return df_[df_[col_].astype(str) == str(val_)]
-
-# Note: link filter uses Tool link code (master)
-if link_sel != "All":
-    fdf = fdf[fdf["_Link Code"] == link_sel]
-if f_region and region_sel != "All":
-    fdf = fdf[fdf[f_region].astype(str) == str(region_sel)]
-if f_project and project_sel != "All":
-    fdf = fdf[fdf[f_project].astype(str) == str(project_sel)]
-if tool_sub and subclass_sel != "All":
-    fdf = fdf[fdf["_Subclass"].astype(str) == str(subclass_sel)]
-if f_year and year_sel != "All":
-    fdf = fdf[fdf[f_year].astype(str) == str(year_sel)]
-if f_stage and stage_sel != "All":
-    fdf = fdf[fdf[f_stage].astype(str) == str(stage_sel)]
-if f_district and district_sel != "All":
-    fdf = fdf[fdf[f_district].astype(str) == str(district_sel)]
-if f_supervisor and supervisor_sel != "All":
-    fdf = fdf[fdf[f_supervisor].astype(str) == str(supervisor_sel)]
-
-st.divider()
-
-# =========================================================
-# KPI summary (Top 5 cards)
-# =========================================================
-kpi_cols = st.columns(5)
-total_link = int(fdf["_Link Code"].nunique())
-
-avg_tool = float(np.nanmean(fdf["_Tool_Target_%"])) if fdf["_Tool_Target_%"].notna().any() else 0.0
-avg_met  = float(np.nanmean(fdf["_MET_Actual_%"])) if fdf["_MET_Actual_%"].notna().any() else 0.0
-
-# Missing MET reports: still compute based on current filters except link_code filter:
-# If user filters region etc, we compute missing within that filtered scope.
-scope_tool = tool_df.copy()
-if f_region and region_sel != "All":
-    scope_tool = scope_tool[scope_tool[f_region].astype(str) == str(region_sel)]
-if f_project and project_sel != "All":
-    scope_tool = scope_tool[scope_tool[f_project].astype(str) == str(project_sel)]
-if tool_sub and subclass_sel != "All":
-    scope_tool = scope_tool[scope_tool["_Subclass"].astype(str) == str(subclass_sel)]
-if f_year and year_sel != "All":
-    scope_tool = scope_tool[scope_tool[f_year].astype(str) == str(year_sel)]
-if f_stage and stage_sel != "All":
-    scope_tool = scope_tool[scope_tool[f_stage].astype(str) == str(stage_sel)]
-if f_district and district_sel != "All":
-    scope_tool = scope_tool[scope_tool[f_district].astype(str) == str(district_sel)]
-if f_supervisor and supervisor_sel != "All":
-    scope_tool = scope_tool[scope_tool[f_supervisor].astype(str) == str(supervisor_sel)]
-
-scope_link_codes = set(scope_tool["_Link Code"].dropna().unique())
-missing_scope = sorted(list(scope_link_codes - met_link_codes))
-missing_count = len(missing_scope)
-
-critical_lags = int(fdf["Critical Lag"].sum()) if "Critical Lag" in fdf.columns else 0
-
-def kpi_card(title, value, suffix=""):
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-          <p class="kpi-title">{title}</p>
-          <p class="kpi-value">{value}{suffix}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with kpi_cols[0]:
-    kpi_card("TOTAL LINK CODES", total_link)
-with kpi_cols[1]:
-    kpi_card("DAWAIYAT AVG TARGET", f"{avg_tool:.1f}", "%")
-with kpi_cols[2]:
-    kpi_card("MET AVG ACTUAL", f"{avg_met:.1f}", "%")
-with kpi_cols[3]:
-    kpi_card("MISSING MET REPORTS", missing_count)
-with kpi_cols[4]:
-    kpi_card("CRITICAL LAGS (>15%)", critical_lags)
-
-st.divider()
-
-# =========================================================
-# Strategic 3×3 grid charts
-# =========================================================
-st.markdown('<p class="section-title">Strategic Performance Grids</p>', unsafe_allow_html=True)
-st.markdown('<p class="section-sub">REAL-TIME COMPARATIVE ANALYTICS</p>', unsafe_allow_html=True)
-
-tpl = plotly_template(dark_mode)
-
-row1 = st.columns(3)
-row2 = st.columns(3)
-row3 = st.columns(3)
-
-# Chart 1: Regional Coverage donut
-with row1[0]:
-    st.markdown("**GEOGRAPHY DISTRIBUTION**  \nRegional Coverage")
-    if f_region:
-        g = fdf.groupby(f_region)["_Link Code"].nunique().reset_index(name="count")
-        fig = px.pie(g, values="count", names=f_region, hole=0.62)
-        fig.update_layout(template=tpl, margin=dict(l=10,r=10,t=20,b=10), height=320, showlegend=True)
-        st.plotly_chart(fig, use_container_width=True)
+# 1) Regional Coverage (donut)
+with g1:
+    st.markdown('<div class="card"><div class="ctitle">GEOGRAPHY DISTRIBUTION</div><div class="csubtitle">Regional Coverage</div>', unsafe_allow_html=True)
+    reg_counts = filtered.groupby("region")["link_code"].nunique().reset_index(name="count")
+    if reg_counts.empty:
+        st.write("No data")
     else:
-        st.info("Region column not found in the Tool sheet.")
-
-# Chart 2: Dawaiyat vs MET trend (weekly)
-with row1[1]:
-    st.markdown("**PROGRESS COMPARISON**  \nDawaiyat vs. MET Trend")
-    dt_src = fdf["_Tool_Target_Date"]
-    if dt_src.notna().any():
-        wk = make_week_key(dt_src)
-        tmp = fdf.copy()
-        tmp["_wk"] = wk
-        tt = tmp.groupby("_wk")[["_Tool_Target_%","_MET_Actual_%"]].mean(numeric_only=True).reset_index()
-        tt = tt.dropna(subset=["_wk"]).sort_values("_wk")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=tt["_wk"], y=tt["_MET_Actual_%"], mode="lines+markers", name="Site Actual"))
-        fig.add_trace(go.Scatter(x=tt["_wk"], y=tt["_Tool_Target_%"], mode="lines+markers", name="Tool Target"))
-        fig.update_layout(template=tpl, height=320, margin=dict(l=10,r=10,t=10,b=10), xaxis_title="", yaxis_title="%")
+        fig = px.pie(reg_counts, names="region", values="count", hole=0.65)
+        fig.update_traces(textposition="outside", textinfo="label+value")
+        fig.update_layout(margin=dict(l=10,r=10,t=10,b=10), showlegend=True, height=280)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No commitment target dates found for trend chart.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Chart 3: Operational Status donut
-with row1[2]:
-    st.markdown("**WORK ORDER HEALTH**  \nOperational Status")
-    status = pd.Series(np.where(fdf["Record Status"]=="NO MET SHEET","Missing Site Report",
-                      np.where(fdf["_MET_Actual_%"]>=100,"Completed","In Progress")))
-    s = status.value_counts().reset_index()
-    s.columns = ["Status","Count"]
-    fig = px.pie(s, values="Count", names="Status", hole=0.62)
-    fig.update_layout(template=tpl, height=320, margin=dict(l=10,r=10,t=20,b=10))
+# 2) Dawaiyat vs MET Trend (line)
+with g2:
+    st.markdown('<div class="card"><div class="ctitle">PROGRESS COMPARISON</div><div class="csubtitle">Dawaiyat vs. MET Trend</div>', unsafe_allow_html=True)
+    # build pseudo timeline by sorting link codes (or work orders) for visual rhythm
+    trend = filtered.copy()
+    trend["x"] = range(1, len(trend)+1)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=trend["x"], y=trend["met_progress"], mode="lines+markers", name="Site Actual"))
+    fig.add_trace(go.Scatter(x=trend["x"], y=trend["tool_progress"], mode="lines+markers", name="Tool Target"))
+    fig.update_layout(height=280, margin=dict(l=10,r=10,t=10,b=10), legend=dict(orientation="h"))
     st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Chart 4: Supervisor performance
-with row2[0]:
-    st.markdown("**PRODUCTIVITY BY LEAD**  \nField Supervisor Performance")
-    if f_supervisor:
-        tmp = fdf.copy()
-        agg = tmp.groupby(f_supervisor).agg(
-            Units_Managed=("_Link Code","nunique"),
-            Avg_Progress=("_MET_Actual_%","mean")
-        ).reset_index()
-        agg["Avg_Progress"] = agg["Avg_Progress"].fillna(0)
-        agg = agg.sort_values("Units_Managed", ascending=False).head(10)
+# 3) Operational Status (pie)
+with g3:
+    st.markdown('<div class="card"><div class="ctitle">WORK ORDER HEALTH</div><div class="csubtitle">Operational Status</div>', unsafe_allow_html=True)
+    op_counts = filtered["operational_status"].value_counts().reset_index()
+    op_counts.columns = ["status","count"]
+    if op_counts.empty:
+        st.write("No data")
+    else:
+        fig = px.pie(op_counts, names="status", values="count", hole=0.0)
+        fig.update_layout(height=280, margin=dict(l=10,r=10,t=10,b=10), showlegend=True)
+        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+g4, g5, g6 = st.columns(3)
+
+# 4) Field Supervisor Performance (bar + units)
+with g4:
+    st.markdown('<div class="card"><div class="ctitle">PRODUCTIVITY BY LEAD</div><div class="csubtitle">Field Supervisor Performance</div>', unsafe_allow_html=True)
+    sup = filtered.dropna(subset=["supervisor"]).copy()
+    if sup.empty:
+        st.write("No data")
+    else:
+        agg = sup.groupby("supervisor").agg(
+            avg_progress=("met_progress","mean"),
+            units=("work_order","count")
+        ).reset_index().sort_values("avg_progress", ascending=False).head(10)
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=agg[f_supervisor], y=agg["Avg_Progress"], name="Avg Progress (%)"))
-        fig.add_trace(go.Bar(x=agg[f_supervisor], y=agg["Units_Managed"], name="Units Managed", opacity=0.45))
-        fig.update_layout(barmode="group", template=tpl, height=320, margin=dict(l=10,r=10,t=10,b=10))
-        fig.update_xaxes(tickangle=-20)
+        fig.add_trace(go.Bar(x=agg["supervisor"], y=agg["avg_progress"], name="Avg Progress (%)"))
+        fig.add_trace(go.Bar(x=agg["supervisor"], y=agg["units"], name="Units Managed", yaxis="y2", opacity=0.6))
+        fig.update_layout(
+            height=280, margin=dict(l=10,r=10,t=10,b=10),
+            yaxis=dict(title="Avg Progress"),
+            yaxis2=dict(title="Units", overlaying="y", side="right"),
+            legend=dict(orientation="h"),
+            barmode="group"
+        )
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Supervisor column not found in the Tool sheet.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Chart 5: Discipline distribution donut
-with row2[1]:
-    st.markdown("**WORK SUBCLASS**  \nDiscipline Distribution")
-    if tool_sub:
-        g = fdf["_Subclass"].replace("", np.nan).fillna("Unknown").value_counts().reset_index()
-        g.columns = ["Subclass","Count"]
-        fig = px.pie(g, values="Count", names="Subclass", hole=0.62)
-        fig.update_layout(template=tpl, height=320, margin=dict(l=10,r=10,t=20,b=10))
+# 5) Discipline Distribution (donut)
+with g5:
+    st.markdown('<div class="card"><div class="ctitle">WORK SUBCLASS</div><div class="csubtitle">Discipline Distribution</div>', unsafe_allow_html=True)
+    subc = filtered["subclass"].value_counts().reset_index()
+    subc.columns = ["subclass","count"]
+    if subc.empty:
+        st.write("No data")
+    else:
+        fig = px.pie(subc, names="subclass", values="count", hole=0.65)
+        fig.update_layout(height=280, margin=dict(l=10,r=10,t=10,b=10), showlegend highlighting=True)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Subclass column not found.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Chart 6: System variance gap area (weekly)
-with row2[2]:
-    st.markdown("**MET LAGGING TOOL**  \nSystem Variance Gap")
-    dt_src = fdf["_Tool_Target_Date"]
-    if dt_src.notna().any():
-        wk = make_week_key(dt_src)
-        tmp = fdf.copy()
-        tmp["_wk"] = wk
-        gg = tmp.groupby("_wk")["Variance %"].mean().reset_index()
-        gg = gg.dropna(subset=["_wk"]).sort_values("_wk")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=gg["_wk"], y=gg["Variance %"], mode="lines", fill="tozeroy", name="Gap (MET-Tool)"))
-        fig.update_layout(template=tpl, height=320, margin=dict(l=10,r=10,t=10,b=10), yaxis_title="%")
+# 6) System Variance Gap (area, met - tool)
+with g6:
+    st.markdown('<div class="card"><div class="ctitle">MET LAGGING TOOL</div><div class="csubtitle">System Variance Gap</div>', unsafe_allow_html=True)
+    gap = filtered.copy()
+    gap["x"] = range(1, len(gap)+1)
+    gap["gap"] = gap["variance"]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=gap["x"], y=gap["gap"], mode="lines", fill="tozeroy", name="Gap (MET-Tool)"))
+    fig.update_layout(height=280, margin=dict(l=10,r=10,t=10,b=10), legend=dict(orientation="h"))
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+g7, g8, g9 = st.columns(3)
+
+# 7) District Loading (bar)
+with g7:
+    st.markdown('<div class="card"><div class="ctitle">TOP ACTIVE DISTRICTS</div><div class="csubtitle">District Loading Summary</div>', unsafe_allow_html=True)
+    d = filtered.dropna(subset=["district"]).copy()
+    if d.empty:
+        st.write("No data")
+    else:
+        dd = d.groupby("district")["work_order"].count().reset_index(name="count").sort_values("count", ascending=False).head(10)
+        fig = px.bar(dd, x="count", y="district", orientation="h")
+        fig.update_layout(height=280, margin=dict(l=10,r=10,t=10,b=10), yaxis=dict(categoryorder="total ascending"))
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No dates to compute variance trend.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Chart 7: District loading top 6
-with row3[0]:
-    st.markdown("**TOP 6 ACTIVE DISTRICTS**  \nDistrict Loading Summary")
-    if f_district:
-        g = fdf.groupby(f_district)["_Link Code"].nunique().reset_index(name="count")
-        g = g.sort_values("count", ascending=False).head(6)
-        fig = px.bar(g, x="count", y=f_district, orientation="h")
-        fig.update_layout(template=tpl, height=320, margin=dict(l=10,r=10,t=10,b=10), xaxis_title="", yaxis_title="")
+# 8) Execution lifecycle (pie)
+with g8:
+    st.markdown('<div class="card"><div class="ctitle">STAGE BREAKDOWN</div><div class="csubtitle">Execution Lifecycle Stage</div>', unsafe_allow_html=True)
+    s = filtered.dropna(subset=["stage"]).copy()
+    if s.empty:
+        st.write("No data")
+    else:
+        ss = s["stage"].value_counts().reset_index()
+        ss.columns = ["stage","count"]
+        fig = px.pie(ss, names="stage", values="count")
+        fig.update_layout(height=280, margin=dict(l=10,r=10,t=10,b=10), showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("District column not found.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Chart 8: Stage breakdown pie
-with row3[1]:
-    st.markdown("**STAGE BREAKDOWN**  \nExecution Lifecycle Stage")
-    if f_stage:
-        g = fdf[f_stage].fillna("Unknown").value_counts().reset_index()
-        g.columns = ["Stage","Count"]
-        fig = px.pie(g, values="Count", names="Stage", hole=0.0)
-        fig.update_layout(template=tpl, height=320, margin=dict(l=10,r=10,t=20,b=10))
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Stage column not found.")
+# 9) Projected vs Realized (step chart)
+with g9:
+    st.markdown('<div class="card"><div class="ctitle">DELIVERY STEP TREND</div><div class="csubtitle">Projected vs. Realized</div>', unsafe_allow_html=True)
+    step = filtered.copy()
+    step["x"] = range(1, len(step)+1)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=step["x"], y=step["met_progress"], mode="lines+markers", name="Realized"))
+    fig.add_trace(go.Scatter(x=step["x"], y=step["tool_progress"], mode="lines", line=dict(dash="dash"), name="Target"))
+    fig.update_layout(height=280, margin=dict(l=10,r=10,t=10,b=10), legend=dict(orientation="h"))
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Chart 9: Projected vs realized (step)
-with row3[2]:
-    st.markdown("**DELIVERY STEP TREND**  \nProjected vs. Realized")
-    dt_src = fdf["_Tool_Target_Date"]
-    if dt_src.notna().any():
-        wk = make_week_key(dt_src)
-        tmp = fdf.copy()
-        tmp["_wk"] = wk
-        tt = tmp.groupby("_wk")[["_Tool_Target_%","_MET_Actual_%"]].mean(numeric_only=True).reset_index()
-        tt = tt.dropna(subset=["_wk"]).sort_values("_wk")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=tt["_wk"], y=tt["_MET_Actual_%"], mode="lines+markers", name="Realized"))
-        fig.add_trace(go.Scatter(x=tt["_wk"], y=tt["_Tool_Target_%"], mode="lines", name="Target", line=dict(dash="dot"), shape="hv"))
-        fig.update_layout(template=tpl, height=320, margin=dict(l=10,r=10,t=10,b=10), yaxis_title="%")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No dates to build projected vs realized chart.")
+# ----------------------------
+# Actionable Alerts: Missing MET
+# ----------------------------
+missing_df = filtered[~filtered["has_met"]].copy()
+missing_links = missing_df[["link_code","district"]].drop_duplicates()
 
-st.divider()
-
-# =========================================================
-# Actionable alert: Missing MET reports
-# =========================================================
-st.markdown("### 🚨 Missing MET Actual Reports")
-st.caption(f"{missing_count} Link Codes require urgent site status updates (based on your current filter scope).")
-
-if missing_count == 0:
-    st.success("✅ No missing MET reports in the selected scope.")
-else:
-    # Build a compact card grid of missing items
-    miss_df = scope_tool[scope_tool["_Link Code"].isin(missing_scope)].copy()
-    # Add a representative target progress and district/region
-    miss_df["_Target"] = miss_df["_Tool_Target_%"]
-    # Keep unique link codes
-    miss_u = miss_df.sort_values("_Target", ascending=False).groupby("_Link Code").head(1)
-
-    cards_per_row = 5
-    rows = int(np.ceil(len(miss_u) / cards_per_row))
-    for r in range(rows):
-        cols = st.columns(cards_per_row)
-        chunk = miss_u.iloc[r*cards_per_row:(r+1)*cards_per_row]
-        for i, (_, row) in enumerate(chunk.iterrows()):
-            with cols[i]:
-                lc = row["_Link Code"]
-                reg = row[f_region] if f_region else ""
-                dist = row[f_district] if f_district else ""
-                tgt = row["_Target"]
-                st.markdown(
-                    f"""
-                    <div class="kpi-card">
-                      <p style="margin:0; font-weight:800;">{lc}</p>
-                      <p style="margin:2px 0 10px 0; font-size:12px; opacity:.75;">{reg} • {dist}</p>
-                      <p class="kpi-title">TARGET PROGRESS</p>
-                      <p style="margin:0; font-size:18px; font-weight:800;">{tgt:.0f}%</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if st.button("👤 ASSIGN UPDATE", key=f"assign_{lc}", use_container_width=True):
-                    st.toast(f"Assigned update request for {lc}", icon="✅")
-
-st.divider()
-
-# =========================================================
-# Tables: Audit + Master + Downloads
-# =========================================================
-tab_audit, tab_master = st.tabs(["🧾 AUDIT", "🗂️ MASTER"])
-
-# Build Audit table
-audit_cols = [
-    "_Link Code", "_WO",
-    f_region, f_district, f_supervisor,
-    "_Tool_Target_%", "_MET_Actual_%", "Variance %",
-    "_Tool_Target_Date", "Record Status"
-]
-audit_cols = [c for c in audit_cols if c is not None and c in fdf.columns]
-
-audit = fdf[audit_cols].copy()
-audit = audit.rename(columns={
-    "_Link Code":"LINK CODE",
-    "_WO":"WORK ORDER",
-    "_Tool_Target_%":"TARGET %",
-    "_MET_Actual_%":"ACTUAL %",
-    "_Tool_Target_Date":"TARGET DATE",
-})
-
-# Add search
-with tab_audit:
-    st.subheader("Audit Comparison")
-    st.caption("Analyzing variance between commitments and site reality")
-
-    q = st.text_input("Search Link Code, WO, or Supervisor...", "")
-    show = audit.copy()
-    if q.strip():
-        qq = q.strip().lower()
-        mask = pd.Series(False, index=show.index)
-        for col in show.columns:
-            mask = mask | show[col].astype(str).str.lower().str.contains(qq, na=False)
-        show = show[mask]
-
-    st.dataframe(show, use_container_width=True, height=420)
-
-    csv = show.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ EXPORT CSV", data=csv, file_name="audit_comparison.csv", mime="text/csv")
-
-# Master table (keep some key fields if available)
-with tab_master:
-    st.subheader("Master Data Inventory")
-    st.caption("Full technical drill-down of all uploaded project parameters")
-
-    master_cols = [
-        "_Link Code","_WO",
-        f_supervisor, f_category, f_stage, f_region, f_district,
-        "_Tool_Target_%","_MET_Actual_%","Record Status"
-    ]
-    master_cols = [c for c in master_cols if c is not None and c in fdf.columns]
-    master = fdf[master_cols].copy()
-    master = master.rename(columns={
-        "_Link Code":"LINK CODE",
-        "_WO":"WORK ORDER",
-        "_Tool_Target_%":"TOOL TARGET %",
-        "_MET_Actual_%":"MET ACTUAL %",
-        "Record Status":"RECORD STATUS"
-    })
-
-    q2 = st.text_input("Search Master...", "", key="master_search")
-    show2 = master.copy()
-    if q2.strip():
-        qq = q2.strip().lower()
-        mask = pd.Series(False, index=show2.index)
-        for col in show2.columns:
-            mask = mask | show2[col].astype(str).str.lower().str.contains(qq, na=False)
-        show2 = show2[mask]
-
-    st.dataframe(show2, use_container_width=True, height=420)
-    csv2 = show2.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ EXPORT CSV", data=csv2, file_name="master_data_inventory.csv", mime="text/csv")
-
-# Footer note about progress column logic
-st.caption(
-    "Note: MET progress is selected by Subclass: **Civil → Civil Completion %**, **Fiber → Fiber Completion %**. "
-    "Tool progress is from **Percentage of Completion**."
+st.markdown(
+    f"""
+    <div class="alert-wrap">
+      <div class="alert-head">
+        <div class="alert-title">🧾 Missing MET Actual Reports</div>
+        <div class="badge">{missing_links.shape[0]} LINK CODES REQUIRE URGENT SITE STATUS UPDATES</div>
+      </div>
+      <div class="cards-scroll">
+    """,
+    unsafe_allow_html=True
 )
+
+if missing_links.empty:
+    st.markdown('<div class="mini">All good — no missing MET link codes.</div>', unsafe_allow_html=True)
+else:
+    # show first N
+    for i, r in enumerate(missing_links.head(30).itertuples(index=False), start=1):
+        lc = r.link_code
+        dist = r.district if isinstance(r.district, str) else ""
+        st.markdown(
+            f"""
+            <div class="mini">
+              <div class="idx">#{i}</div>
+              <div class="lc">{lc}</div>
+              <div class="loc">{dist}</div>
+              <div class="prog">Target Progress <span class="pval">—</span></div>
+              <button class="btn2">ASSIGN UPDATE</button>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+st.markdown("</div></div>", unsafe_allow_html=True)
+
+# ----------------------------
+# Audit / Master Table
+# ----------------------------
+st.markdown('<div class="table-title"><div class="left"><div class="pill2">Audit Comparison</div><div class="pill2">ANALYZING VARIANCE BETWEEN COMMITMENTS AND SITE REALITY</div></div></div>', unsafe_allow_html=True)
+
+# Controls
+cA, cB, cC = st.columns([0.55, 0.25, 0.20])
+with cA:
+    q = st.text_input("Search", placeholder="Search Link Code, WO, or Supervisor...", label_visibility="collapsed")
+with cB:
+    view = st.radio("View", ["AUDIT", "MASTER"], horizontal=True, label_visibility="collapsed")
+with cC:
+    csv_bytes = filtered.to_csv(index=False).encode("utf-8")
+    st.download_button("EXPORT CSV", data=csv_bytes, file_name="dawiyat_dashboard_export.csv", mime="text/csv")
+
+table_df = filtered.copy()
+if q:
+    qq = q.lower().strip()
+    table_df = table_df[
+        table_df["link_code"].astype(str).str.lower().str.contains(qq)
+        | table_df["work_order"].astype(str).str.lower().str.contains(qq)
+        | table_df["supervisor"].astype(str).str.lower().str.contains(qq)
+    ]
+
+if view == "AUDIT":
+    # show key reconciliation fields
+    audit_cols = ["link_code","work_order","district","subclass","tool_progress","met_progress","variance","stage","supervisor"]
+    audit = table_df[audit_cols].copy()
+
+    def variance_label(x):
+        if pd.isna(x):
+            return "—"
+        if x >= 0:
+            return f"↑ {abs(x):.1f}%"
+        return f"↓ {abs(x):.1f}%"
+
+    audit["variance_label"] = audit["variance"].apply(variance_label)
+    audit["met_label"] = audit["met_progress"].apply(lambda x: "MISSING MET" if pd.isna(x) else f"{x:.1f}%")
+    audit["tool_label"] = audit["tool_progress"].apply(lambda x: "" if pd.isna(x) else f"{x:.1f}%")
+
+    show = audit.rename(columns={
+        "link_code":"IDENTITIES",
+        "district":"REGIONAL INFO",
+        "tool_label":"TARGET %",
+        "met_label":"ACTUAL %",
+        "variance_label":"VARIANCE",
+    })[["IDENTITIES","work_order","REGIONAL INFO","TARGET %","ACTUAL %","VARIANCE"]]
+
+    st.dataframe(show, use_container_width=True, height=430)
+else:
+    # Master view
+    master_cols = ["link_code","work_order","district","subclass","stage","tool_progress","met_progress","record_status"]
+    show = table_df[master_cols].copy()
+    show = show.rename(columns={
+        "link_code":"IDENTITIES",
+        "work_order":"WORK ORDER",
+        "district":"DISTRICT",
+        "subclass":"CATEGORY",
+        "stage":"STAGE",
+        "tool_progress":"TARGET %",
+        "met_progress":"ACTUAL %",
+        "record_status":"RECORD STATUS"
+    })
+    st.dataframe(show, use_container_width=True, height=430)
+
+# ----------------------------
+# Top right actions row (help + refresh)
+# ----------------------------
+# Put below to not interfere with layout; use columns for clickable actions
+a1, a2, a3 = st.columns([0.75, 0.12, 0.13])
+with a2:
+    if st.button("UPDATE SOURCE DATA"):
+        st.rerun()
+with a3:
+    if st.button(" ? "):
+        st.session_state.show_guide = not st.session_state.show_guide
+
+if st.session_state.show_guide:
+    st.markdown("---")
+    st.markdown(GUIDE_MD)
